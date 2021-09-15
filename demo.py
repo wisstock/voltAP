@@ -54,67 +54,86 @@ def ABFpars(path):
                 file_suffix = file_suffix.split('_')[-1]
                 if file_suffix in input_suffix.keys():
                     file_path = os.path.join(root, file)
-                    abf_record = pyabf.ABF(file_path)
-
-                    # CUSTOM ATTRIBUTE!
-                    # add application time attribute
-                    setattr(abf_record, 'appTime',
-                            input_suffix[file_suffix])
-
-                    # create Y no gap record from individual sweeps
-                    no_gap_Y = []
-                    for i in range(0,abf_record.sweepCount):
-                        abf_record.setSweep(i)
-                        [no_gap_Y.append(val) for val in abf_record.sweepY]
-                    setattr(abf_record, 'sweepY_no_gap', no_gap_Y)
-
-                    # create X timeline for no gap record
-                    setattr(abf_record, 'sweepX_no_gap',
-                            np.arange(len(abf_record.sweepY_no_gap))*abf_record.dataSecPerPoint)
-
-                    record_list.append(abf_record)
-                    logging.info(f'File {file} uploaded!')
+                    record_list.append(spikeDet(file_path, file, input_suffix[file_suffix]))
     return (record_list)
 
 
-def der(vector, dt):
-    """ 1st derivate.
-    vector - input data (sweepY)
-    dt - discretization frequency (in sec)
+class spikeDet():
+    def __init__(self, record_path, record_name, app_time):
+        self.record = pyabf.ABF(record_path)
+        self.record_name = record_name.split('.')[0]
 
-    """
-    point_der = lambda x_2k, x_1k, x_k1, x_k2, t: (x_2k - 8*x_1k + 8*x_k1 - x_k2)/(12*t)
-    return [point_der(vector[i-2], vector[i-1], vector[i+1], vector[i+2], dt)
-            for i in range(2,len(vector)-2)], vector[2:-2]
+        # add application time attribute
+        self.app_time = app_time
 
-def der2(vector, dt):
-    """ 2nd derivate.
-    vector - input data (sweepY)
-    dt - discretization frequency (in sec)
+        # create Y no gap record from individual sweeps
+        self.sweepY_no_gap = np.array([])
+        for i in range(0,self.record.sweepCount):
+            self.record.setSweep(i)
+            np.append(self.sweepY_no_gap, [val for val in self.record.sweepY])
 
-    """
-    point_der2 = lambda x_2k, x_1k, x_k, x_k1, x_k2, t: (-x_2k + 16*x_1k - 30*x_k + 16*x_k1 - x_k2)/(12 * t*t)
-    return [point_der2(vector[i-2], vector[i-1], vector[i], vector[i+1], vector[i+2], dt)
-            for i in range(2,len(vector)-2)], vector[2:-2]
+        # create X timeline for no gap record
+        self.sweepX_no_gap = np.arange(len(self.sweepY_no_gap))*self.record.dataSecPerPoint
+
+        logging.info(f'File {self.record_name} uploaded!')
+
+    def no_gap_spike_detect(self, spike_h=0, l_lim=20, r_lim=50):
+        """ Simple spike detection by peak feature and spike interval extraction.
+        spike_h - spike amlitude threshold (mV)
+        l_lim - left limit of spike region (ms)
+        r_lim - right limit of spike region (ms)
+        write_spike_interval - create dictionary with time interval for each detected spike
+
+        """
+        self.spike_peaks, self.spike_prop = signal.find_peaks(self.sweepY_no_gap, height=spike_h)  # index of spike peak
+        self.spike_time = self.sweepX_no_gap[self.spike_peaks]  # time of spike peak
+
+        logging.info(f'In {self.record.sweepCount} sweeps finded {len(self.spike_peaks)} peaks, thr. = {spike_h}mV')
+
+        self.spike_interval = {spike_p:[spike_p - (l_lim/1e3/self.record.dataSecPerPoint),
+                                        spike_p + (r_lim/1e3/self.record.dataSecPerPoint)]
+                               for spike_p in self.spike_peaks}
+
+    def der(self):
+        """ 1st derivate.
+        vector - input data (sweepY)
+        dt - discretization frequency (in sec)
+
+        """
+        point_der = lambda x_2k, x_1k, x_k1, x_k2, t: (x_2k - 8*x_1k + 8*x_k1 - x_k2)/(12*t)
+
+        vector = self.sweepY_no_gap
+        time_vector = self.sweepX_no_gap
+        dt = self.record.dataSecPerPoint
+
+        self.der = [point_der(vector[i-2], vector[i-1], vector[i+1], vector[i+2], dt)
+                    for i in range(2,len(vector)-2)]
+        self.der_adj_vector = vector[2:-2]
+        self.der_adj_time_vector = time_vector[2:-2]
+
+    def der2(vector, dt):
+        """ 2nd derivate.
+        vector - input data (sweepY)
+        dt - discretization frequency (in sec)
+
+        """
+        point_der2 = lambda x_2k, x_1k, x_k, x_k1, x_k2, t: (-x_2k + 16*x_1k - 30*x_k + 16*x_k1 - x_k2)/(12 * t*t)
+        return [point_der2(vector[i-2], vector[i-1], vector[i], vector[i+1], vector[i+2], dt)
+                for i in range(2,len(vector)-2)], vector[2:-2]
 
 
-abf_list = ABFpars(data_path)
+reg_list = ABFpars(data_path)
 num = 0
-abf_list[num].setSweep(0)
+reg = reg_list[0]
+reg.no_gap_spike_detect()
 
-
-# small_sweep = abf_list[abf_num].sweepY[107500:108500]
-
-# sweepDer, sweepRes = der(small_sweep, 1/abf_list[abf_num].dataRate)
-# sweepDer2, sweepRes2 = der2(small_sweep, 1/abf_list[abf_num].dataRate)
-
-# norm = lambda x: [i / max(x) for i in x]
+# small_sweep = abf_list[num].sweepY[107500:108500]
+# sweepDer, sweepRes = der(small_sweep, 1/abf_list[num].dataRate)
+# sweepDer2, sweepRes2 = der2(small_sweep, 1/abf_list[num].dataRate)
 
 plt.figure(figsize=(8, 5))
 # plt.xlim(left=107500, right=108500)
-plt.plot(abf_list[num].sweepX_no_gap, abf_list[num].sweepY_no_gap)
-plt.plot(abf_list[num].sweepX, abf_list[num].sweepY)
-# for i in range(0, abf_list[abf_num].sweepCount):
-#     abf_list[abf_num].setSweep(i)
-#     plt.plot(abf_list[abf_num].sweepX, abf_list[abf_num].sweepY, alpha=.5, label="sweep %d" % (i))
+
+plt.plot(reg.sweepX_no_gap, reg.sweepY_no_gap)
+
 plt.show()
