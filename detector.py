@@ -66,7 +66,7 @@ def ABFpars(path):
                     logging.info(f'File {file} uploaded!')
     return (record_list)
 
-def spike_detect(record, spike_h=0, spike_w=2, spike_d=10, l_lim=20, r_lim=50):
+def spike_detect(record, spike_h=0, spike_w=2, spike_d=10, l_lim=False, r_lim=False, lim_adj=15):
     """ Simple spike detection by peak feature and spike interval extraction.
     record - pyABF instance 
     spike_h - spike amlitude threshold (mV)
@@ -80,10 +80,29 @@ def spike_detect(record, spike_h=0, spike_w=2, spike_d=10, l_lim=20, r_lim=50):
                                                 height=spike_h,
                                                 width=spike_w,
                                                 distance=spike_d/1e3/record.dataSecPerPoint)  # index of spike peak
-    # spike_time = record.sweepX_no_gap[spike_peaks]  # time of spike peak
+    
+    # minimal spike distance estimation
+    if not l_lim:
+        l_diff = np.absolute(np.append(spike_peaks, 0) - np.insert(spike_peaks, 0, 0))
+        l_lim = min(l_diff[1:-2])
+        if l_lim > 1000:  # 50 ms
+            l_lim = 400  # 20 ms
+            logging.info('Left limit too large, l_lim = 20ms')
+        else:
+            l_lim = l_lim - lim_adj
+            logging.info(f'l_lim = {round(l_lim*record.dataSecPerPoint*1e3, 1)}ms')
 
-    spike_interval = {spike_p:[int(spike_p - (l_lim/1e3/record.dataSecPerPoint)),
-                               int(spike_p + (r_lim/1e3/record.dataSecPerPoint))]
+        r_diff = np.absolute(np.insert(spike_peaks, 0, 0) - np.append(spike_peaks, 0))
+        r_lim = min(r_diff[1:-2])
+        if r_lim > 1000:  # 50 ms
+            r_lim = 400  # 20 ms
+            logging.info('Right limit too large, r_lim = 50ms')
+        else:
+            r_lim = r_lim - lim_adj
+            logging.info(f'r_lim = {round(r_lim*record.dataSecPerPoint*1e3, 1)}ms')
+
+    spike_interval = {spike_p:[int(spike_p - l_lim),
+                               int(spike_p + r_lim)]
                       for spike_p in spike_peaks}
 
     logging.info(f'In {record.sweepCount} sweeps {len(spike_peaks)} peaks, thr. = {spike_h}mV')
@@ -161,7 +180,7 @@ for reg in reg_list:
     logging.info(f'Registration {reg.fileName} in progress')
 
     # spike detection and extraction
-    reg_spike_peak, reg_spike_interval = spike_detect(reg, spike_h=-10, l_lim=40, r_lim=50)
+    reg_spike_peak, reg_spike_interval = spike_detect(reg, spike_h=-10)
     spike_array = spike_extract(reg.sweepY_no_gap, reg_spike_interval)
 
     # derivate section
@@ -169,31 +188,46 @@ for reg in reg_list:
     der2_array = [der2(i, reg.dataSecPerPoint) for i in spike_array]
     time_line = np.arange(len(der_array[0][0]))*reg.dataSecPerPoint  # time axis for derivate data (sec)
 
+    
+    full_no_gap_sweep, full_no_gap_der = der(reg.sweepY_no_gap, reg.dataSecPerPoint)
+
 
     # plot section
-    fig = plt.figure(figsize=(8, 12))
+    fig = plt.figure(figsize=(12, 8))
     fig.suptitle(f'{reg.fileName}, {reg.appTime}')
 
-    ax1 = fig.add_subplot(311)
+    ax0 = fig.add_subplot(311)
+    ax0.set_title('Full record')
+    ax0.set_xlabel('t (sec)')
+    ax0.set_ylabel('V (mV)')
+    ax0.plot(reg.sweepX_no_gap[2:-2], full_no_gap_sweep)
+
+    ax00 = fig.add_subplot(312)
+    ax00.set_title('Full record dV/dt')
+    ax00.set_xlabel('t (sec)')
+    ax00.set_ylabel('dV/dt (V/sec)')
+    ax00.plot(reg.sweepX_no_gap[2:-2], full_no_gap_der/1e3)
+
+    ax1 = fig.add_subplot(337)
     ax1.set_title('V ~ t')
     ax1.set_xlabel('t (sec)')
     ax1.set_ylabel('V (mV)')
 
-    ax2 = fig.add_subplot(312)
+    ax2 = fig.add_subplot(338)
     ax2.set_title('dV/dt ~ V')
     ax2.set_xlabel('V (mV)')
-    ax2.set_ylabel('dV/dt')
+    ax2.set_ylabel('dV/dt (V/sec)')
 
-    ax3 = fig.add_subplot(313)
+    ax3 = fig.add_subplot(339)
     ax3.set_title('dV2/dt2 ~ V')
     ax3.set_xlabel('V (mV)')
-    ax3.set_ylabel('dV2/dt2')
+    ax3.set_ylabel('dV2/dt2 (mV/sec2)')
 
     for plot_num in range(0, len(der_array)):
         der_plot = der_array[plot_num]
         der2_plot = der2_array[plot_num]
         ax1.plot(time_line, der_plot[0], alpha=.5)
-        ax2.plot(der_plot[0], der_plot[1], alpha=.5)
+        ax2.plot(der_plot[0], der_plot[1]/1e3, alpha=.5)
         ax3.plot(der2_plot[0], der2_plot[1], alpha=.5)
 
     plt.tight_layout()
