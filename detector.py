@@ -20,16 +20,6 @@ import matplotlib.pyplot as plt
 import pyabf
 
 
-FORMAT = "%(asctime)s| %(levelname)s [%(filename)s: - %(funcName)20s]  %(message)s"
-logging.basicConfig(level=logging.INFO,
-                    format=FORMAT)
-
-
-data_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'data')
-res_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'results')
-if not os.path.exists(res_path):
-    os.makedirs(res_path)
-
 def ABFpars(path):
     """ Read methadata YAML file with records siffixes
     and feature (time after aplication) value.
@@ -55,6 +45,8 @@ def ABFpars(path):
                     abf_record = pyabf.ABF(file_path)
 
                     # CUSTOM ATTRIBUTE!
+                    setattr(abf_record, 'fileName', file.split('.')[0])
+
                     # add application time attribute
                     setattr(abf_record, 'appTime',
                             input_suffix[file_suffix])
@@ -74,8 +66,7 @@ def ABFpars(path):
                     logging.info(f'File {file} uploaded!')
     return (record_list)
 
-
-def spike_detect(record, spike_h=0, spike_w=2,spike_d=10, l_lim=20, r_lim=50):
+def spike_detect(record, spike_h=0, spike_w=2, spike_d=10, l_lim=20, r_lim=50):
     """ Simple spike detection by peak feature and spike interval extraction.
     record - pyABF instance 
     spike_h - spike amlitude threshold (mV)
@@ -91,14 +82,25 @@ def spike_detect(record, spike_h=0, spike_w=2,spike_d=10, l_lim=20, r_lim=50):
                                                 distance=spike_d/1e3/record.dataSecPerPoint)  # index of spike peak
     # spike_time = record.sweepX_no_gap[spike_peaks]  # time of spike peak
 
-    spike_interval = {spike_p:[spike_p - (l_lim/1e3/record.dataSecPerPoint),
-                               spike_p + (r_lim/1e3/record.dataSecPerPoint)]
+    spike_interval = {spike_p:[int(spike_p - (l_lim/1e3/record.dataSecPerPoint)),
+                               int(spike_p + (r_lim/1e3/record.dataSecPerPoint))]
                       for spike_p in spike_peaks}
 
-    logging.info(f'In {record.sweepCount} sweeps finded {len(spike_peaks)} peaks, thr. = {spike_h}mV')
+    logging.info(f'In {record.sweepCount} sweeps {len(spike_peaks)} peaks, thr. = {spike_h}mV')
     return spike_peaks, spike_interval
 
-def otsu_baseline(record=False, vector=False):
+def spike_extract(vector, intervals):
+    """ Extract individual spikes by ibdex 
+    """
+    spike_array = []
+    [spike_array.append(vector[intervals[peak_key][0]:intervals[peak_key][1]])
+     for peak_key in intervals.keys()]
+
+    return np.array(spike_array)
+
+def otsu_baseline(record=False, vector=False, rep=1):
+    """ Otsu thresholding for baseline extraction
+    """
     if record:
         counts, bin_centers = np.histogram(record.sweepY_no_gap, bins=256)
     else:
@@ -118,15 +120,15 @@ def otsu_baseline(record=False, vector=False):
     logging.info(f'Otsu threshold = {otsu}mV')
     return otsu
 
-
 def der(vector, dt):
     """ 1st derivate.
     vector - input data (sweepY)
     dt - discretization frequency (in sec)
     """
     point_der = lambda x_2k, x_1k, x_k1, x_k2, t: (x_2k - 8*x_1k + 8*x_k1 - x_k2)/(12*t)
-    return [point_der(vector[i-2], vector[i-1], vector[i+1], vector[i+2], dt)
-            for i in range(2,len(vector)-2)], vector[2:-2]
+    return [vector[2:-2],
+            np.array([point_der(vector[i-2], vector[i-1], vector[i+1], vector[i+2], dt)
+                      for i in range(2,len(vector)-2)])]
 
 def der2(vector, dt):
     """ 2nd derivate.
@@ -134,48 +136,97 @@ def der2(vector, dt):
     dt - discretization frequency (in sec)
     """
     point_der2 = lambda x_2k, x_1k, x_k, x_k1, x_k2, t: (-x_2k + 16*x_1k - 30*x_k + 16*x_k1 - x_k2)/(12 * t*t)
-    return [point_der2(vector[i-2], vector[i-1], vector[i], vector[i+1], vector[i+2], dt)
-            for i in range(2,len(vector)-2)], vector[2:-2]
+    return [vector[2:-2],
+            np.array([point_der2(vector[i-2], vector[i-1], vector[i], vector[i+1], vector[i+2], dt)
+                     for i in range(2,len(vector)-2)])]
+
+# def der3(vector, dt)
+
+FORMAT = "%(asctime)s| %(levelname)s [%(filename)s: - %(funcName)20s]  %(message)s"
+logging.basicConfig(level=logging.INFO,
+                    format=FORMAT)
+
+data_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'data')
+res_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'results')
+if not os.path.exists(res_path):
+    os.makedirs(res_path)
+
 
 
 reg_list = ABFpars(data_path)
 num = 0
 reg = reg_list[num]
 
+for reg in reg_list:
+    logging.info(f'Registration {reg.fileName} in progress')
 
-ot = otsu_baseline(reg)
-otsuY = np.copy(reg.sweepY_no_gap)
-otsuY[otsuY > ot] = ot
+    # spike detection and extraction
+    reg_spike_peak, reg_spike_interval = spike_detect(reg, spike_h=-10, l_lim=40, r_lim=50)
+    spike_array = spike_extract(reg.sweepY_no_gap, reg_spike_interval)
 
-oot = otsu_baseline(vector=otsuY)
-otsuY[otsuY > oot] = oot
-
-
-
-reg_spike, reg_interval = spike_detect(reg)
+    # derivate section
+    der_array = [der(i, reg.dataSecPerPoint) for i in spike_array]
+    der2_array = [der2(i, reg.dataSecPerPoint) for i in spike_array]
+    time_line = np.arange(len(der_array[0][0]))*reg.dataSecPerPoint  # time axis for derivate data (sec)
 
 
+    # plot section
+    fig = plt.figure(figsize=(8, 12))
+    fig.suptitle(f'{reg.fileName}, {reg.appTime}')
 
-# small_sweep = abf_list[abf_num].sweepY[107500:108500]
+    ax1 = fig.add_subplot(311)
+    ax1.set_title('V ~ t')
+    ax1.set_xlabel('t (sec)')
+    ax1.set_ylabel('V (mV)')
 
-# sweepDer, sweepRes = der(small_sweep, 1/abf_list[abf_num].dataRate)
-# sweepDer2, sweepRes2 = der2(small_sweep, 1/abf_list[abf_num].dataRate)
+    ax2 = fig.add_subplot(312)
+    ax2.set_title('dV/dt ~ V')
+    ax2.set_xlabel('V (mV)')
+    ax2.set_ylabel('dV/dt')
 
-# norm = lambda x: [i / max(x) for i in x]
+    ax3 = fig.add_subplot(313)
+    ax3.set_title('dV2/dt2 ~ V')
+    ax3.set_xlabel('V (mV)')
+    ax3.set_ylabel('dV2/dt2')
 
-plt.figure(figsize=(8, 5))
+    for plot_num in range(0, len(der_array)):
+        der_plot = der_array[plot_num]
+        der2_plot = der2_array[plot_num]
+        ax1.plot(time_line, der_plot[0], alpha=.5)
+        ax2.plot(der_plot[0], der_plot[1], alpha=.5)
+        ax3.plot(der2_plot[0], der2_plot[1], alpha=.5)
 
-for i in range(0, reg.sweepCount):
-    reg.setSweep(i)
-    sweep_der, sweep_adj = der(reg.sweepY, reg.dataSecPerPoint)
-    plt.plot(sweep_adj, sweep_der, alpha=.5)
+    plt.tight_layout()
+    plt.savefig(f'{res_path}/{reg.fileName}_ctrl_img.png')
+    plt.close('all')
 
-# plt.plot(reg.sweepX_no_gap, reg.sweepY_no_gap)
-# plt.plot(reg.sweepX_no_gap, otsuY, ls=':')
-# plt.plot(reg.sweepX_no_gap[reg_spike], reg.sweepY_no_gap[reg_spike], 'x')
-# plt.axhline(ot, color='k', ls='--')
-# # plt.plot(reg.sweepX_no_gap, reg.sweepY_no_gap)
+    logging.info('Ctrl img saved\n')
 
-# plt.hist(reg_hist)
 
-plt.show()
+
+# ot = otsu_baseline(reg)
+# otsuY = np.copy(reg.sweepY_no_gap)
+# otsuY[otsuY > ot] = ot
+
+# oot = otsu_baseline(vector=otsuY)
+# otsuY[otsuY > oot] = oot
+
+
+# plt.figure(figsize=(8, 5))
+
+# for plot_num in range(0, len(der_array)):
+#     der_plot = der_array[plot_num]
+#     der2_plot = der2_array[plot_num]
+#     time_line = np.arange(len(der_plot[0]))*reg.dataSecPerPoint
+#     plt.plot(der_plot[1], der2_plot[1]/der_plot[1], alpha=.5)
+#     # plt.plot(der_plot[0], der2_plot[1]/max(der2_plot[1]), alpha=.5, ls='--')
+
+# # # plt.plot(reg.sweepX_no_gap, reg.sweepY_no_gap)
+# # # plt.plot(reg.sweepX_no_gap, otsuY, ls=':')
+# # # plt.plot(reg.sweepX_no_gap[reg_spike], reg.sweepY_no_gap[reg_spike], 'x')
+# # # plt.axhline(ot, color='k', ls='--')
+# # # # plt.plot(reg.sweepX_no_gap, reg.sweepY_no_gap)
+
+# # # plt.hist(reg_hist)
+
+# plt.show()
