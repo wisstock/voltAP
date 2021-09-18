@@ -145,9 +145,8 @@ def der(vector, dt):
     dt - discretization frequency (in sec)
     """
     point_der = lambda x_2k, x_1k, x_k1, x_k2, t: (x_2k - 8*x_1k + 8*x_k1 - x_k2)/(12*t)
-    return [vector[2:-2],
-            np.array([point_der(vector[i-2], vector[i-1], vector[i+1], vector[i+2], dt)
-                      for i in range(2,len(vector)-2)])]
+    return np.array([point_der(vector[i-2], vector[i-1], vector[i+1], vector[i+2], dt)
+                      for i in range(3,len(vector)-3)])
 
 def der2(vector, dt):
     """ 2nd derivate.
@@ -155,9 +154,17 @@ def der2(vector, dt):
     dt - discretization frequency (in sec)
     """
     point_der2 = lambda x_2k, x_1k, x_k, x_k1, x_k2, t: (-x_2k + 16*x_1k - 30*x_k + 16*x_k1 - x_k2)/(12 * t*t)
-    return [vector[2:-2],
-            np.array([point_der2(vector[i-2], vector[i-1], vector[i], vector[i+1], vector[i+2], dt)
-                     for i in range(2,len(vector)-2)])]
+    return np.array([point_der2(vector[i-2], vector[i-1], vector[i], vector[i+1], vector[i+2], dt)
+                  for i in range(3,len(vector)-3)])
+
+def der3(vector, dt):
+    """ 3d derivate.
+    vector - input data (sweepY)
+    dt - discretization frequency (in sec)
+    """
+    point_der3 = lambda x_3k, x_2k, x_1k, x_k1, x_k2, x_k3, t: (x_3k - 8*x_2k + 13*x_1k - 13*x_k1 + 8*x_k2 - x_k3)/(12 * t*t*t)
+    return np.array([point_der3(vector[i-3], vector[i-2], vector[i-1], vector[i+1], vector[i+2], vector[i+3], dt)
+                     for i in range(3,len(vector)-3)])
 
 def der2_der(der_array, der2_array):
     """ Calculate der2/der
@@ -168,26 +175,22 @@ def der2_der(der_array, der2_array):
     return np.array(der_ratio_list)
 
 
-plt.style.use('dark_background')
-plt.rcParams['figure.facecolor'] = '#272b30'
-plt.rcParams['image.cmap'] = 'inferno'
-
 
 FORMAT = "%(asctime)s| %(levelname)s [%(filename)s: - %(funcName)20s]  %(message)s"
 logging.basicConfig(level=logging.INFO,
                     format=FORMAT)
 
-data_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'data')
+data_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'demo_data')
 res_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'results')
 if not os.path.exists(res_path):
     os.makedirs(res_path)
 
-
-
 reg_list = ABFpars(data_path)
 num = 0
 reg = reg_list[num]
+demo = True
 
+# loop over input registrations
 for reg in reg_list:
     logging.info(f'Registration {reg.fileName} in progress')
 
@@ -196,63 +199,74 @@ for reg in reg_list:
     spike_array = spike_extract(reg.sweepY_no_gap, reg_spike_interval)
 
     # derivate section
+    logging.info('1st derivete calc in progress')
     der_array = [der(i, reg.dataSecPerPoint) for i in spike_array]
+
+    logging.info('2nd derivete calc in progress')
     der2_array = [der2(i, reg.dataSecPerPoint) for i in spike_array]
 
-    voltage_array = [der_array[i][0] for i in range(0, len(der_array))]
-    time_line = np.arange(len(der_array[0][0]))*reg.dataSecPerPoint  # time axis for derivate data (sec)
+    logging.info('3d derivete calc in progress')
+    der3_array = [der3(i, reg.dataSecPerPoint) for i in spike_array]
+
+    voltage_array = [i[3:-3] for i in spike_array]  # voltage axis, resize to der size
+    time_line = np.arange(np.shape(der_array)[1])*reg.dataSecPerPoint  # time axis for derivate data (sec)
 
     der2_der_array = der2_der(der_array, der2_array)
 
-    plt.figure(figsize=(8, 5))
-    for i in range(0, len(der2_der_array)):
-        plt.plot(der_array[i][1], der2_der_array[i], alpha=.5)
-    plt.show() 
+    if demo:
+        # demo plot section
+        plt.figure(figsize=(8, 5))
+        for i in range(0, len(der3_array)):
+            # plt.plot(time_line, voltage_array[i]/np.max(voltage_array[i]), alpha=.5)
+            plt.plot(voltage_array[i]/np.max(voltage_array[i]), der_array[i]/np.max(der_array[i]), alpha=.5, ls='-')
+            plt.plot(voltage_array[i]/np.max(voltage_array[i]), der2_array[i]/np.max(der2_array[i]), alpha=.5, ls='--')
+            plt.plot(voltage_array[i]/np.max(voltage_array[i]), der3_array[i]/np.max(der3_array[i]), alpha=.5, ls=':')
+        plt.show()
+    else: 
+        # CTRL plot section
+        # 1st derivate of total registration
+        full_no_gap_sweep, full_no_gap_der = der(reg.sweepY_no_gap, reg.dataSecPerPoint)
 
-    
-    # full_no_gap_sweep, full_no_gap_der = der(reg.sweepY_no_gap, reg.dataSecPerPoint)
+        # plot section
+        fig = plt.figure(figsize=(12, 8))
+        fig.suptitle(f'{reg.fileName}, {reg.appTime}')
 
+        ax0 = fig.add_subplot(311)
+        ax0.set_title('Full record')
+        ax0.set_xlabel('t (sec)')
+        ax0.set_ylabel('V (mV)')
+        ax0.plot(reg.sweepX_no_gap[2:-2], full_no_gap_sweep)
 
-    # # plot section
-    # fig = plt.figure(figsize=(12, 8))
-    # fig.suptitle(f'{reg.fileName}, {reg.appTime}')
+        ax00 = fig.add_subplot(312)
+        ax00.set_title('Full record dV/dt')
+        ax00.set_xlabel('t (sec)')
+        ax00.set_ylabel('dV/dt (V/sec)')
+        ax00.plot(reg.sweepX_no_gap[2:-2], full_no_gap_der/1e3)
 
-    # ax0 = fig.add_subplot(311)
-    # ax0.set_title('Full record')
-    # ax0.set_xlabel('t (sec)')
-    # ax0.set_ylabel('V (mV)')
-    # ax0.plot(reg.sweepX_no_gap[2:-2], full_no_gap_sweep)
+        ax1 = fig.add_subplot(337)
+        ax1.set_title('V ~ t')
+        ax1.set_xlabel('t (sec)')
+        ax1.set_ylabel('V (mV)')
 
-    # ax00 = fig.add_subplot(312)
-    # ax00.set_title('Full record dV/dt')
-    # ax00.set_xlabel('t (sec)')
-    # ax00.set_ylabel('dV/dt (V/sec)')
-    # ax00.plot(reg.sweepX_no_gap[2:-2], full_no_gap_der/1e3)
+        ax2 = fig.add_subplot(338)
+        ax2.set_title('dV/dt ~ V')
+        ax2.set_xlabel('V (mV)')
+        ax2.set_ylabel('dV/dt (V/sec)')
 
-    # ax1 = fig.add_subplot(337)
-    # ax1.set_title('V ~ t')
-    # ax1.set_xlabel('t (sec)')
-    # ax1.set_ylabel('V (mV)')
+        ax3 = fig.add_subplot(339)
+        ax3.set_title('dV2/dt2 ~ V')
+        ax3.set_xlabel('V (mV)')
+        ax3.set_ylabel('dV2/dt2 (mV/sec2)')
 
-    # ax2 = fig.add_subplot(338)
-    # ax2.set_title('dV/dt ~ V')
-    # ax2.set_xlabel('V (mV)')
-    # ax2.set_ylabel('dV/dt (V/sec)')
+        for plot_num in range(0, len(der_array)):
+            der_plot = der_array[plot_num]
+            der2_plot = der2_array[plot_num]
+            ax1.plot(time_line, der_plot[0], alpha=.5)
+            ax2.plot(der_plot[0], der_plot[1]/1e3, alpha=.5)
+            ax3.plot(der2_plot[0], der2_plot[1], alpha=.5)
 
-    # ax3 = fig.add_subplot(339)
-    # ax3.set_title('dV2/dt2 ~ V')
-    # ax3.set_xlabel('V (mV)')
-    # ax3.set_ylabel('dV2/dt2 (mV/sec2)')
+        plt.tight_layout()
+        plt.savefig(f'{res_path}/{reg.fileName}_ctrl_img.png')
+        plt.close('all')
 
-    # for plot_num in range(0, len(der_array)):
-    #     der_plot = der_array[plot_num]
-    #     der2_plot = der2_array[plot_num]
-    #     ax1.plot(time_line, der_plot[0], alpha=.5)
-    #     ax2.plot(der_plot[0], der_plot[1]/1e3, alpha=.5)
-    #     ax3.plot(der2_plot[0], der2_plot[1], alpha=.5)
-
-    # plt.tight_layout()
-    # plt.savefig(f'{res_path}/{reg.fileName}_ctrl_img.png')
-    # plt.close('all')
-
-    # logging.info('Ctrl img saved\n')
+        logging.info('Ctrl img saved\n')
