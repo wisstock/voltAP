@@ -159,7 +159,19 @@ def der2(vector, dt):
             np.array([point_der2(vector[i-2], vector[i-1], vector[i], vector[i+1], vector[i+2], dt)
                      for i in range(2,len(vector)-2)])]
 
-# def der3(vector, dt)
+def der2_der(der_array, der2_array):
+    """ Calculate der2/der
+    """
+    der_ratio_list = []
+    for i in range(0, len(der_array)):
+        der_ratio_list.append(der2_array[i][1] / der_array[i][1])
+    return np.array(der_ratio_list)
+
+
+plt.style.use('dark_background')
+plt.rcParams['figure.facecolor'] = '#272b30'
+plt.rcParams['image.cmap'] = 'inferno'
+
 
 FORMAT = "%(asctime)s| %(levelname)s [%(filename)s: - %(funcName)20s]  %(message)s"
 logging.basicConfig(level=logging.INFO,
@@ -186,81 +198,61 @@ for reg in reg_list:
     # derivate section
     der_array = [der(i, reg.dataSecPerPoint) for i in spike_array]
     der2_array = [der2(i, reg.dataSecPerPoint) for i in spike_array]
+
+    voltage_array = [der_array[i][0] for i in range(0, len(der_array))]
     time_line = np.arange(len(der_array[0][0]))*reg.dataSecPerPoint  # time axis for derivate data (sec)
 
+    der2_der_array = der2_der(der_array, der2_array)
+
+    plt.figure(figsize=(8, 5))
+    for i in range(0, len(der2_der_array)):
+        plt.plot(der_array[i][1], der2_der_array[i], alpha=.5)
+    plt.show() 
+
     
-    full_no_gap_sweep, full_no_gap_der = der(reg.sweepY_no_gap, reg.dataSecPerPoint)
+    # full_no_gap_sweep, full_no_gap_der = der(reg.sweepY_no_gap, reg.dataSecPerPoint)
 
 
-    # plot section
-    fig = plt.figure(figsize=(12, 8))
-    fig.suptitle(f'{reg.fileName}, {reg.appTime}')
+    # # plot section
+    # fig = plt.figure(figsize=(12, 8))
+    # fig.suptitle(f'{reg.fileName}, {reg.appTime}')
 
-    ax0 = fig.add_subplot(311)
-    ax0.set_title('Full record')
-    ax0.set_xlabel('t (sec)')
-    ax0.set_ylabel('V (mV)')
-    ax0.plot(reg.sweepX_no_gap[2:-2], full_no_gap_sweep)
+    # ax0 = fig.add_subplot(311)
+    # ax0.set_title('Full record')
+    # ax0.set_xlabel('t (sec)')
+    # ax0.set_ylabel('V (mV)')
+    # ax0.plot(reg.sweepX_no_gap[2:-2], full_no_gap_sweep)
 
-    ax00 = fig.add_subplot(312)
-    ax00.set_title('Full record dV/dt')
-    ax00.set_xlabel('t (sec)')
-    ax00.set_ylabel('dV/dt (V/sec)')
-    ax00.plot(reg.sweepX_no_gap[2:-2], full_no_gap_der/1e3)
+    # ax00 = fig.add_subplot(312)
+    # ax00.set_title('Full record dV/dt')
+    # ax00.set_xlabel('t (sec)')
+    # ax00.set_ylabel('dV/dt (V/sec)')
+    # ax00.plot(reg.sweepX_no_gap[2:-2], full_no_gap_der/1e3)
 
-    ax1 = fig.add_subplot(337)
-    ax1.set_title('V ~ t')
-    ax1.set_xlabel('t (sec)')
-    ax1.set_ylabel('V (mV)')
+    # ax1 = fig.add_subplot(337)
+    # ax1.set_title('V ~ t')
+    # ax1.set_xlabel('t (sec)')
+    # ax1.set_ylabel('V (mV)')
 
-    ax2 = fig.add_subplot(338)
-    ax2.set_title('dV/dt ~ V')
-    ax2.set_xlabel('V (mV)')
-    ax2.set_ylabel('dV/dt (V/sec)')
+    # ax2 = fig.add_subplot(338)
+    # ax2.set_title('dV/dt ~ V')
+    # ax2.set_xlabel('V (mV)')
+    # ax2.set_ylabel('dV/dt (V/sec)')
 
-    ax3 = fig.add_subplot(339)
-    ax3.set_title('dV2/dt2 ~ V')
-    ax3.set_xlabel('V (mV)')
-    ax3.set_ylabel('dV2/dt2 (mV/sec2)')
+    # ax3 = fig.add_subplot(339)
+    # ax3.set_title('dV2/dt2 ~ V')
+    # ax3.set_xlabel('V (mV)')
+    # ax3.set_ylabel('dV2/dt2 (mV/sec2)')
 
-    for plot_num in range(0, len(der_array)):
-        der_plot = der_array[plot_num]
-        der2_plot = der2_array[plot_num]
-        ax1.plot(time_line, der_plot[0], alpha=.5)
-        ax2.plot(der_plot[0], der_plot[1]/1e3, alpha=.5)
-        ax3.plot(der2_plot[0], der2_plot[1], alpha=.5)
+    # for plot_num in range(0, len(der_array)):
+    #     der_plot = der_array[plot_num]
+    #     der2_plot = der2_array[plot_num]
+    #     ax1.plot(time_line, der_plot[0], alpha=.5)
+    #     ax2.plot(der_plot[0], der_plot[1]/1e3, alpha=.5)
+    #     ax3.plot(der2_plot[0], der2_plot[1], alpha=.5)
 
-    plt.tight_layout()
-    plt.savefig(f'{res_path}/{reg.fileName}_ctrl_img.png')
-    plt.close('all')
+    # plt.tight_layout()
+    # plt.savefig(f'{res_path}/{reg.fileName}_ctrl_img.png')
+    # plt.close('all')
 
-    logging.info('Ctrl img saved\n')
-
-
-
-# ot = otsu_baseline(reg)
-# otsuY = np.copy(reg.sweepY_no_gap)
-# otsuY[otsuY > ot] = ot
-
-# oot = otsu_baseline(vector=otsuY)
-# otsuY[otsuY > oot] = oot
-
-
-# plt.figure(figsize=(8, 5))
-
-# for plot_num in range(0, len(der_array)):
-#     der_plot = der_array[plot_num]
-#     der2_plot = der2_array[plot_num]
-#     time_line = np.arange(len(der_plot[0]))*reg.dataSecPerPoint
-#     plt.plot(der_plot[1], der2_plot[1]/der_plot[1], alpha=.5)
-#     # plt.plot(der_plot[0], der2_plot[1]/max(der2_plot[1]), alpha=.5, ls='--')
-
-# # # plt.plot(reg.sweepX_no_gap, reg.sweepY_no_gap)
-# # # plt.plot(reg.sweepX_no_gap, otsuY, ls=':')
-# # # plt.plot(reg.sweepX_no_gap[reg_spike], reg.sweepY_no_gap[reg_spike], 'x')
-# # # plt.axhline(ot, color='k', ls='--')
-# # # # plt.plot(reg.sweepX_no_gap, reg.sweepY_no_gap)
-
-# # # plt.hist(reg_hist)
-
-# plt.show()
+    # logging.info('Ctrl img saved\n')

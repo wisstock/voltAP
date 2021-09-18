@@ -1,0 +1,12 @@
+# CC record methata
+# number suffix as name, time in min after C5a aplication as feature (control record define as 'ctrl')
+
+'0005': 'ctrl'
+# '0009': 0
+# '0013': 10
+# '0017': 20
+# '0021': 30
+# '0025': 40
+# '0029': 50
+# '0033': 60
+
