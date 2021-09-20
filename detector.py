@@ -161,30 +161,51 @@ def der3(vector, dt):
     """ 3d derivate.
     vector - input data (sweepY)
     dt - discretization frequency (in sec)
+
     """
     point_der3 = lambda x_3k, x_2k, x_1k, x_k1, x_k2, x_k3, t: (x_3k - 8*x_2k + 13*x_1k - 13*x_k1 + 8*x_k2 - x_k3)/(12 * t*t*t)
     return np.array([point_der3(vector[i-3], vector[i-2], vector[i-1], vector[i+1], vector[i+2], vector[i+3], dt)
                      for i in range(3,len(vector)-3)])
 
-def g_t(der_array, der2_array):
+def g_t(der_array, der2_array, noise_win=20, noise_tolerance=1):
     """ Calculate der2/der
+    noise_win - number of element for noise sd calculation
+    noise_tolerance - number of noise SD for positive value only extraction, another element equallies to zero
+    
     """
     der_ratio_list = []
+    der_ratio_max = []
     for i in range(0, len(der_array)):
-        der_ratio_list.append(der2_array[i] / der_array[i])
-    return np.array(der_ratio_list)
+        der_noise = np.std(der_array[i][:noise_win])
+        der_positive_mask = np.where(der_array[i] < der_noise*noise_tolerance)
 
-def h_t(der, der2, der3):
+        der_ratio = der2_array[i] / der_array[i]
+        der_ratio[der_positive_mask] = 0
+
+        der_ratio_list.append(der_ratio)
+        der_ratio_max.append(np.where(der_ratio == np.max(der_ratio)))
+
+    return np.array(der_ratio_list), np.array(der_ratio_max)
+
+def h_t(der, der2, der3, noise_win=20, noise_tolerance=1):
+    der_noise = np.std(der_array[:noise_win])
+    logging.info(f'dV/dt noise SD={round(der_noise, 2)}')
+    der_positive_mask = np.where(der_array < der_noise*noise_tolerance)
+
     h_list = []
     for i in range(0, len(der_array)):
         h_list.append((der3[i]*der[i] - der2[i]**2)/(der[i]**3))
-    return np.array(h_list)
+    h_list = np.array(h_list)
+    h_list[der_positive_mask] = 0 
+    return h_list
 
 
 
 FORMAT = "%(asctime)s| %(levelname)s [%(filename)s: - %(funcName)20s]  %(message)s"
 logging.basicConfig(level=logging.INFO,
                     format=FORMAT)
+
+np.seterr(divide='ignore', invalid='ignore')
 
 data_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'demo_data')
 res_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'results')
@@ -207,29 +228,32 @@ for reg in reg_list:
     # derivate section
     logging.info('1st derivete calc in progress')
     der_array = [der(i, reg.dataSecPerPoint) for i in spike_array]
-
     logging.info('2nd derivete calc in progress')
     der2_array = [der2(i, reg.dataSecPerPoint) for i in spike_array]
-
     logging.info('3d derivete calc in progress')
     der3_array = [der3(i, reg.dataSecPerPoint) for i in spike_array]
 
     voltage_array = [i[3:-3] for i in spike_array]  # voltage axis, resize to der size
     time_line = np.arange(np.shape(der_array)[1])*reg.dataSecPerPoint  # time axis for derivate data (sec)
 
-    g_t_array = g_t(der_array, der2_array)
-    h_t_array = h_t(der_array, der2_array, der3_array)
+    g_t_array, g_t_th = g_t(der_array, der2_array,
+                       noise_win=100, noise_tolerance=15)
+    # h_t_array = h_t(der_array, der2_array, der3_array)
 
     if demo:
-        # demo plot section
+        # der plot section
         plt.figure(figsize=(8, 5))
         for i in range(0, len(der3_array)):
+            g_v_th = np.where(g_t_array[i] == np.max(g_t_array[i]))
+            print(voltage_array[i][g_v_th])
+
             # vector ~ time
-            plt.plot(time_line, voltage_array[i]/np.max(voltage_array[i]), alpha=.5)
-            plt.plot(time_line, der_array[i]/np.max(der_array[i]), alpha=.25, ls='--')
+            plt.plot(time_line, voltage_array[i], alpha=.5)
+            plt.plot(time_line, der_array[i]/np.max(der_array[i]), alpha=.5, ls='--')
             # plt.plot(time_line, der2_array[i]/np.max(der2_array[i]), alpha=.25, ls='--')
-            # plt.plot(time_line, h_t_array[i], alpha=.5, ls='-')
-            # plt.plot(time_line, g_t_array[i], alpha=.5, ls='--')
+            # plt.plot(time_line, h_t_array[i]/np.max(h_t_array[i]), alpha=.5, ls=':')
+            plt.plot(time_line, g_t_array[i]/np.max(g_t_array[i]), alpha=.5, ls=':')
+            plt.axvline(x=time_line[g_t_th[i]])
 
             # # der ~ voltage
             # plt.plot(voltage_array[i]/np.max(voltage_array[i]), der_array[i]/np.max(der_array[i]), alpha=.5, ls='-')
