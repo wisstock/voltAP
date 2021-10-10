@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """ Copyright © 2021 Borys Olifirov
 AP detector test functions.
+
 """
 
 import sys
@@ -13,6 +14,7 @@ import numpy as np
 import pandas as pd
 import scipy
 from scipy import signal
+from scipy import integrate
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -45,6 +47,7 @@ def ABFpars(path):
                     abf_record = pyabf.ABF(file_path)
 
                     # CUSTOM ATTRIBUTE!
+                    # add file name
                     setattr(abf_record, 'fileName', file.split('.')[0])
 
                     # add application time attribute
@@ -218,8 +221,18 @@ reg_list = ABFpars(data_path)
 demo = True
 
 # df init
-df = pd.DataFrame(columns=['file', 'app_time', 'v_th'])
+df = pd.DataFrame(columns=['file',      # file name
+                           'app_time',  # application time
+                           'sweep',     # sweep number
+                           'AP',        # AP number
+                           'v_max',     # AP max amplitude
+                           't_max',     # AP maw time
+                           'v_th',      # threshold voltage
+                           't_th',      # threshold time
+                           'power'])    # AP power
 
+
+print(type(reg_list))
 # loop over input registrations
 for reg in reg_list:
     logging.info(f'Registration {reg.fileName} in progress')
@@ -227,6 +240,10 @@ for reg in reg_list:
     # spike detection and extraction
     reg_spike_peak, reg_spike_interval = spike_detect(reg, spike_h=-10)
     spike_array = spike_extract(reg.sweepY_no_gap, reg_spike_interval)
+
+    # croped array 
+    voltage_array = np.array([i[3:-3] for i in spike_array])  # voltage axis, resize to der size
+    time_line = np.arange(np.shape(voltage_array)[1])*reg.dataSecPerPoint  # time axis for derivate data (sec)
 
     # derivate section
     logging.info('1st derivete calc in progress')
@@ -236,35 +253,42 @@ for reg in reg_list:
     logging.info('3d derivete calc in progress')
     der3_array = [der3(i, reg.dataSecPerPoint) for i in spike_array]
 
-    voltage_array = np.array([i[3:-3] for i in spike_array])  # voltage axis, resize to der size
-    time_line = np.arange(np.shape(voltage_array)[1])*reg.dataSecPerPoint  # time axis for derivate data (sec)
-
+    # threshold calc
     g_t_array, g_t_max = g_t(der_array, der2_array,
                              noise_win=100, noise_tolerance=15)  # 15 noise SD, realy?!
 
     # loop over APs and df writing
-    v_th_list = []
+    v_th_list = []  # list of absolute AP threshold values
+    ap_pow_list = []  # list of AP power values
     for i in range(0, len(voltage_array)):
         # extract Vth by index from boolean vector of g(t) max position
-        v_th_list.append(round(float(voltage_array[i][g_t_max[i]]), 2))
+        v_th_list.append(round(float(voltage_array[i][g_t_max[i]]), 3))
+        ap_pow_list.append(int(integrate.cumtrapz(der_array[i], voltage_array[i], initial=0)[-1]))
     print(v_th_list)
+    print(ap_pow_list)
 
     if demo:
         # DER plot section
-        plt.figure(figsize=(8, 5))
-        for i in range(0, len(voltage_array)): 
-            # vector ~ time
-            plt.plot(time_line, voltage_array[i], alpha=.5)
-            plt.plot(time_line, (der_array[i]/np.max(der_array[i])*20), alpha=.5, ls='--')
-            # plt.plot(time_line, der2_array[i]/np.max(der2_array[i]), alpha=.25, ls='--')
-            # plt.plot(time_line, h_t_array[i]/np.max(h_t_array[i]), alpha=.5, ls=':')
-            plt.plot(time_line, (g_t_array[i]/np.max(g_t_array[i])*5), alpha=.5, ls=':')
-            plt.axvline(x=time_line[g_t_max[i]])
+        i = 0
+        test_int = integrate.cumtrapz(der_array[i], voltage_array[i], initial=0)
+        print(test_int[-1])
+        
+        # for i in range(0, len(voltage_array)):
 
-            # # der ~ voltage
-            # plt.plot(voltage_array[i]/np.max(voltage_array[i]), der_array[i]/np.max(der_array[i]), alpha=.5, ls='-')
-            # plt.plot(voltage_array[i]/np.max(voltage_array[i]), der2_array[i]/np.max(der2_array[i]), alpha=.5, ls='--')
-            # plt.plot(voltage_array[i]/np.max(voltage_array[i]), der3_array[i]/np.max(der3_array[i]), alpha=.5, ls=':')
+        plt.figure(figsize=(8, 5)) 
+        # vector ~ time
+        # plt.plot(time_line, voltage_array[i], alpha=.5)
+        # plt.plot(time_line, (der_array[i]/np.max(der_array[i])*20), alpha=.5, ls='--')
+        # plt.plot(time_line, der2_array[i]/np.max(der2_array[i]), alpha=.25, ls='--')
+        # plt.plot(time_line, h_t_array[i]/np.max(h_t_array[i]), alpha=.5, ls=':')
+        # plt.plot(time_line, (g_t_array[i]/np.max(g_t_array[i])*5), alpha=.5, ls=':')
+        # plt.axvline(x=time_line[g_t_max[i]])
+
+        # # der ~ voltage
+        plt.plot(voltage_array[i], der_array[i]/max(der_array[i]), alpha=.5, ls='-')
+        plt.plot(voltage_array[i], test_int/max(test_int), alpha=.5, ls=':')
+        # plt.plot(voltage_array[i]/np.max(voltage_array[i]), der2_array[i]/np.max(der2_array[i]), alpha=.5, ls='--')
+        # plt.plot(voltage_array[i]/np.max(voltage_array[i]), der3_array[i]/np.max(der3_array[i]), alpha=.5, ls=':')
         plt.show()
     else: 
         # CTRL plot section
