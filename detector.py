@@ -108,7 +108,7 @@ def spike_detect(record, spike_h=0, spike_w=2, spike_d=10, l_lim=False, r_lim=Fa
                                int(spike_p + r_lim)]
                       for spike_p in spike_peaks}
 
-    logging.info(f'In {record.sweepCount} sweeps {len(spike_peaks)} peaks, thr. = {spike_h}mV')
+    logging.info(f'{len(spike_peaks)} peaks in {record.sweepCount} sweeps, thr. = {spike_h}mV')
     return spike_peaks, spike_interval
 
 def spike_extract(vector, intervals):
@@ -210,7 +210,7 @@ logging.basicConfig(level=logging.INFO,
 
 np.seterr(divide='ignore', invalid='ignore')
 
-data_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'demo_data')
+data_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'data')
 res_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'results')
 if not os.path.exists(res_path):
     os.makedirs(res_path)
@@ -218,13 +218,12 @@ if not os.path.exists(res_path):
 reg_list = ABFpars(data_path)
 # num = 0
 # reg = reg_list[num]
-demo = True
+demo = False
+save_csv = True
 
 # df init
 df = pd.DataFrame(columns=['file',      # file name
                            'app_time',  # application time
-                           'sweep',     # sweep number
-                           'AP',        # AP number
                            'v_max',     # AP max amplitude
                            't_max',     # AP maw time
                            'v_th',      # threshold voltage
@@ -232,10 +231,12 @@ df = pd.DataFrame(columns=['file',      # file name
                            'power'])    # AP power
 
 
-print(type(reg_list))
 # loop over input registrations
 for reg in reg_list:
     logging.info(f'Registration {reg.fileName} in progress')
+
+    # loop over sweeps
+    # for i in range(0, reg.sweepCount):
 
     # spike detection and extraction
     reg_spike_peak, reg_spike_interval = spike_detect(reg, spike_h=-10)
@@ -261,9 +262,33 @@ for reg in reg_list:
     v_th_list = []  # list of absolute AP threshold values
     ap_pow_list = []  # list of AP power values
     for i in range(0, len(voltage_array)):
-        # extract Vth by index from boolean vector of g(t) max position
-        v_th_list.append(round(float(voltage_array[i][g_t_max[i]]), 3))
-        ap_pow_list.append(int(integrate.cumtrapz(der_array[i], voltage_array[i], initial=0)[-1]))
+        
+        # extract AP max amplitude
+        v_max = max(voltage_array[i])
+        v_max_i = voltage_array[i] == v_max
+        t_max = time_line[v_max_i][0]
+
+        # extract Vth
+        th_i = g_t_max[i][0][0]
+        logging.info(f'Threshold index {th_i}')
+        v_th = round(float(voltage_array[i][th_i]), 3)
+        t_th = float(time_line[th_i])
+        v_th_list.append(v_th)
+
+        # AP power calc
+        ap_pow = int(integrate.cumtrapz(der_array[i], voltage_array[i], initial=0)[-1])
+        ap_pow_list.append(ap_pow)
+
+        df = df.append(pd.Series([reg.fileName,  # file name
+                                  reg.appTime,   # application time
+                                  v_max,         # AP max amplitude
+                                  t_max,         # AP maw time
+                                  v_th,          # threshold voltage
+                                  t_th,          # threshold time
+                                  ap_pow],       # AP power
+                                 index=df.columns),
+                       ignore_index=True)
+
     print(v_th_list)
     print(ap_pow_list)
 
@@ -292,49 +317,43 @@ for reg in reg_list:
         plt.show()
     else: 
         # CTRL plot section
-        # 1st derivate of total registration
-        full_no_gap_sweep, full_no_gap_der = der(reg.sweepY_no_gap, reg.dataSecPerPoint)
 
         # plot section
         fig = plt.figure(figsize=(12, 8))
         fig.suptitle(f'{reg.fileName}, {reg.appTime}')
 
-        ax0 = fig.add_subplot(311)
+        ax0 = fig.add_subplot(211)
         ax0.set_title('Full record')
         ax0.set_xlabel('t (sec)')
         ax0.set_ylabel('V (mV)')
-        ax0.plot(reg.sweepX_no_gap[2:-2], full_no_gap_sweep)
+        ax0.plot(reg.sweepX_no_gap, reg.sweepY_no_gap)
 
-        ax00 = fig.add_subplot(312)
-        ax00.set_title('Full record dV/dt')
-        ax00.set_xlabel('t (sec)')
-        ax00.set_ylabel('dV/dt (V/sec)')
-        ax00.plot(reg.sweepX_no_gap[2:-2], full_no_gap_der/1e3)
-
-        ax1 = fig.add_subplot(337)
+        ax1 = fig.add_subplot(234)
         ax1.set_title('V ~ t')
         ax1.set_xlabel('t (sec)')
         ax1.set_ylabel('V (mV)')
 
-        ax2 = fig.add_subplot(338)
+        ax2 = fig.add_subplot(235)
         ax2.set_title('dV/dt ~ V')
         ax2.set_xlabel('V (mV)')
         ax2.set_ylabel('dV/dt (V/sec)')
 
-        ax3 = fig.add_subplot(339)
+        ax3 = fig.add_subplot(236)
         ax3.set_title('dV2/dt2 ~ V')
         ax3.set_xlabel('V (mV)')
         ax3.set_ylabel('dV2/dt2 (mV/sec2)')
 
-        for plot_num in range(0, len(der_array)):
-            der_plot = der_array[plot_num]
-            der2_plot = der2_array[plot_num]
-            ax1.plot(time_line, der_plot[0], alpha=.5)
-            ax2.plot(der_plot[0], der_plot[1]/1e3, alpha=.5)
-            ax3.plot(der2_plot[0], der2_plot[1], alpha=.5)
+        for i in range(0, len(der_array)):
+            ax1.plot(time_line, voltage_array[i], alpha=.5)
+            ax2.plot(voltage_array[i], der_array[i]/1e3, alpha=.5)
+            ax3.plot(voltage_array[i], der2_array[i], alpha=.5)
 
         plt.tight_layout()
         plt.savefig(f'{res_path}/{reg.fileName}_ctrl_img.png')
         plt.close('all')
 
         logging.info('Ctrl img saved\n')
+
+if save_csv:
+  df.to_csv(f'{res_path}/results.csv', index=False)
+  logging.info('CSV file saved')
