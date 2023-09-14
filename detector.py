@@ -40,33 +40,34 @@ def ABFpars(path):
     record_list = []
     for root, dirs, files in os.walk(path):
             for file in files:
-                file_suffix = file.split('.')[0]
-                file_suffix = file_suffix.split('_')[-1]
-                if file_suffix in input_suffix.keys():
-                    file_path = os.path.join(root, file)
-                    abf_record = pyabf.ABF(file_path)
+                if file.endswith('.abf'):
+                    file_suffix = file.split('.')[0]
+                    file_suffix = file_suffix.split('_')[-1]
+                    if file_suffix in input_suffix.keys():
+                        file_path = os.path.join(root, file)
+                        abf_record = pyabf.ABF(file_path)
 
-                    # CUSTOM ATTRIBUTE!
-                    # add file name
-                    setattr(abf_record, 'fileName', file.split('.')[0])
+                        # CUSTOM ATTRIBUTE!
+                        # add file name
+                        setattr(abf_record, 'fileName', file.split('.')[0])
 
-                    # add application time attribute
-                    setattr(abf_record, 'appTime',
-                            input_suffix[file_suffix])
+                        # add application time attribute
+                        setattr(abf_record, 'appTime',
+                                input_suffix[file_suffix])
 
-                    # create Y no gap record from individual sweeps
-                    no_gap_Y = []
-                    for i in range(0,abf_record.sweepCount):
-                        abf_record.setSweep(i)
-                        [no_gap_Y.append(val) for val in abf_record.sweepY]
-                    setattr(abf_record, 'sweepY_no_gap', np.array(no_gap_Y))
+                        # create Y no gap record from individual sweeps
+                        no_gap_Y = []
+                        for i in range(0,abf_record.sweepCount):
+                            abf_record.setSweep(i)
+                            [no_gap_Y.append(val) for val in abf_record.sweepY]
+                        setattr(abf_record, 'sweepY_no_gap', np.array(no_gap_Y))
 
-                    # create X timeline for no gap record
-                    setattr(abf_record, 'sweepX_no_gap',
-                            np.arange(len(abf_record.sweepY_no_gap))*abf_record.dataSecPerPoint)
+                        # create X timeline for no gap record
+                        setattr(abf_record, 'sweepX_no_gap',
+                                np.arange(len(abf_record.sweepY_no_gap))*abf_record.dataSecPerPoint)
 
-                    record_list.append(abf_record)
-                    logging.info(f'File {file} uploaded!')
+                        record_list.append(abf_record)
+                        logging.info(f'File {file} uploaded!')
     return (record_list)
 
 def spike_detect(record, spike_h=0, spike_w=2, spike_d=10, l_lim=False, r_lim=False, lim_adj=15):
@@ -204,156 +205,156 @@ def h_t(der, der2, der3, noise_win=20, noise_tolerance=1):
 
 
 
-FORMAT = "%(asctime)s| %(levelname)s [%(filename)s: - %(funcName)20s]  %(message)s"
-logging.basicConfig(level=logging.INFO,
-                    format=FORMAT)
+# FORMAT = "%(asctime)s| %(levelname)s [%(filename)s: - %(funcName)20s]  %(message)s"
+# logging.basicConfig(level=logging.INFO,
+#                     format=FORMAT)
 
-np.seterr(divide='ignore', invalid='ignore')
+# np.seterr(divide='ignore', invalid='ignore')
 
-data_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'data')
-res_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'results')
-if not os.path.exists(res_path):
-    os.makedirs(res_path)
+# data_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'data')
+# res_path = os.path.join(os.path.abspath(os.path.dirname(sys.argv[0])), 'results')
+# if not os.path.exists(res_path):
+#     os.makedirs(res_path)
 
-reg_list = ABFpars(data_path)
-# num = 0
-# reg = reg_list[num]
-demo = False
-save_csv = True
+# reg_list = ABFpars(data_path)
+# # num = 0
+# # reg = reg_list[num]
+# demo = False
+# save_csv = True
 
-# df init
-df = pd.DataFrame(columns=['file',      # file name
-                           'app_time',  # application time
-                           'v_max',     # AP max amplitude
-                           't_max',     # AP maw time
-                           'v_th',      # threshold voltage
-                           't_th',      # threshold time
-                           'power'])    # AP power
+# # df init
+# df = pd.DataFrame(columns=['file',      # file name
+#                            'app_time',  # application time
+#                            'v_max',     # AP max amplitude
+#                            't_max',     # AP maw time
+#                            'v_th',      # threshold voltage
+#                            't_th',      # threshold time
+#                            'power'])    # AP power
 
 
-# loop over input registrations
-for reg in reg_list:
-    logging.info(f'Registration {reg.fileName} in progress')
+# # loop over input registrations
+# for reg in reg_list:
+#     logging.info(f'Registration {reg.fileName} in progress')
 
-    # loop over sweeps
-    # for i in range(0, reg.sweepCount):
+#     # loop over sweeps
+#     # for i in range(0, reg.sweepCount):
 
-    # spike detection and extraction
-    reg_spike_peak, reg_spike_interval = spike_detect(reg, spike_h=-10)
-    spike_array = spike_extract(reg.sweepY_no_gap, reg_spike_interval)
+#     # spike detection and extraction
+#     reg_spike_peak, reg_spike_interval = spike_detect(reg, spike_h=-10)
+#     spike_array = spike_extract(reg.sweepY_no_gap, reg_spike_interval)
 
-    # croped array 
-    voltage_array = np.array([i[3:-3] for i in spike_array])  # voltage axis, resize to der size
-    time_line = np.arange(np.shape(voltage_array)[1])*reg.dataSecPerPoint  # time axis for derivate data (sec)
+#     # croped array 
+#     voltage_array = np.array([i[3:-3] for i in spike_array])  # voltage axis, resize to der size
+#     time_line = np.arange(np.shape(voltage_array)[1])*reg.dataSecPerPoint  # time axis for derivate data (sec)
 
-    # derivate section
-    logging.info('1st derivete calc in progress')
-    der_array = [der(i, reg.dataSecPerPoint) for i in spike_array]
-    logging.info('2nd derivete calc in progress')
-    der2_array = [der2(i, reg.dataSecPerPoint) for i in spike_array]
-    logging.info('3d derivete calc in progress')
-    der3_array = [der3(i, reg.dataSecPerPoint) for i in spike_array]
+#     # derivate section
+#     logging.info('1st derivete calc in progress')
+#     der_array = [der(i, reg.dataSecPerPoint) for i in spike_array]
+#     logging.info('2nd derivete calc in progress')
+#     der2_array = [der2(i, reg.dataSecPerPoint) for i in spike_array]
+#     logging.info('3d derivete calc in progress')
+#     der3_array = [der3(i, reg.dataSecPerPoint) for i in spike_array]
 
-    # threshold calc
-    g_t_array, g_t_max = g_t(der_array, der2_array,
-                             noise_win=100, noise_tolerance=15)  # 15 noise SD, realy?!
+#     # threshold calc
+#     g_t_array, g_t_max = g_t(der_array, der2_array,
+#                              noise_win=100, noise_tolerance=15)  # 15 noise SD, realy?!
 
-    # loop over APs and df writing
-    v_th_list = []  # list of absolute AP threshold values
-    ap_pow_list = []  # list of AP power values
-    for i in range(0, len(voltage_array)):
+#     # loop over APs and df writing
+#     v_th_list = []  # list of absolute AP threshold values
+#     ap_pow_list = []  # list of AP power values
+#     for i in range(0, len(voltage_array)):
         
-        # extract AP max amplitude
-        v_max = max(voltage_array[i])
-        v_max_i = voltage_array[i] == v_max
-        t_max = time_line[v_max_i][0]
+#         # extract AP max amplitude
+#         v_max = max(voltage_array[i])
+#         v_max_i = voltage_array[i] == v_max
+#         t_max = time_line[v_max_i][0]
 
-        # extract Vth
-        th_i = g_t_max[i][0][0]
-        logging.info(f'Threshold index {th_i}')
-        v_th = round(float(voltage_array[i][th_i]), 3)
-        t_th = float(time_line[th_i])
-        v_th_list.append(v_th)
+#         # extract Vth
+#         th_i = g_t_max[i][0][0]
+#         logging.info(f'Threshold index {th_i}')
+#         v_th = round(float(voltage_array[i][th_i]), 3)
+#         t_th = float(time_line[th_i])
+#         v_th_list.append(v_th)
 
-        # AP power calc
-        ap_pow = int(integrate.cumtrapz(der_array[i], voltage_array[i], initial=0)[-1])
-        ap_pow_list.append(ap_pow)
+#         # AP power calc
+#         ap_pow = int(integrate.cumtrapz(der_array[i], voltage_array[i], initial=0)[-1])
+#         ap_pow_list.append(ap_pow)
 
-        df = df.append(pd.Series([reg.fileName,  # file name
-                                  reg.appTime,   # application time
-                                  v_max,         # AP max amplitude
-                                  t_max,         # AP maw time
-                                  v_th,          # threshold voltage
-                                  t_th,          # threshold time
-                                  ap_pow],       # AP power
-                                 index=df.columns),
-                       ignore_index=True)
+#         df = df.append(pd.Series([reg.fileName,  # file name
+#                                   reg.appTime,   # application time
+#                                   v_max,         # AP max amplitude
+#                                   t_max,         # AP maw time
+#                                   v_th,          # threshold voltage
+#                                   t_th,          # threshold time
+#                                   ap_pow],       # AP power
+#                                  index=df.columns),
+#                        ignore_index=True)
 
-    print(v_th_list)
-    print(ap_pow_list)
+#     print(v_th_list)
+#     print(ap_pow_list)
 
-    if demo:
-        # DER plot section
-        i = 0
-        test_int = integrate.cumtrapz(der_array[i], voltage_array[i], initial=0)
-        print(test_int[-1])
+#     if demo:
+#         # DER plot section
+#         i = 0
+#         test_int = integrate.cumtrapz(der_array[i], voltage_array[i], initial=0)
+#         print(test_int[-1])
         
-        # for i in range(0, len(voltage_array)):
+#         # for i in range(0, len(voltage_array)):
 
-        plt.figure(figsize=(8, 5)) 
-        # vector ~ time
-        # plt.plot(time_line, voltage_array[i], alpha=.5)
-        # plt.plot(time_line, (der_array[i]/np.max(der_array[i])*20), alpha=.5, ls='--')
-        # plt.plot(time_line, der2_array[i]/np.max(der2_array[i]), alpha=.25, ls='--')
-        # plt.plot(time_line, h_t_array[i]/np.max(h_t_array[i]), alpha=.5, ls=':')
-        # plt.plot(time_line, (g_t_array[i]/np.max(g_t_array[i])*5), alpha=.5, ls=':')
-        # plt.axvline(x=time_line[g_t_max[i]])
+#         plt.figure(figsize=(8, 5)) 
+#         # vector ~ time
+#         # plt.plot(time_line, voltage_array[i], alpha=.5)
+#         # plt.plot(time_line, (der_array[i]/np.max(der_array[i])*20), alpha=.5, ls='--')
+#         # plt.plot(time_line, der2_array[i]/np.max(der2_array[i]), alpha=.25, ls='--')
+#         # plt.plot(time_line, h_t_array[i]/np.max(h_t_array[i]), alpha=.5, ls=':')
+#         # plt.plot(time_line, (g_t_array[i]/np.max(g_t_array[i])*5), alpha=.5, ls=':')
+#         # plt.axvline(x=time_line[g_t_max[i]])
 
-        # # der ~ voltage
-        plt.plot(voltage_array[i], der_array[i]/max(der_array[i]), alpha=.5, ls='-')
-        plt.plot(voltage_array[i], test_int/max(test_int), alpha=.5, ls=':')
-        # plt.plot(voltage_array[i]/np.max(voltage_array[i]), der2_array[i]/np.max(der2_array[i]), alpha=.5, ls='--')
-        # plt.plot(voltage_array[i]/np.max(voltage_array[i]), der3_array[i]/np.max(der3_array[i]), alpha=.5, ls=':')
-        plt.show()
-    else: 
-        # CTRL plot section
+#         # # der ~ voltage
+#         plt.plot(voltage_array[i], der_array[i]/max(der_array[i]), alpha=.5, ls='-')
+#         plt.plot(voltage_array[i], test_int/max(test_int), alpha=.5, ls=':')
+#         # plt.plot(voltage_array[i]/np.max(voltage_array[i]), der2_array[i]/np.max(der2_array[i]), alpha=.5, ls='--')
+#         # plt.plot(voltage_array[i]/np.max(voltage_array[i]), der3_array[i]/np.max(der3_array[i]), alpha=.5, ls=':')
+#         plt.show()
+#     else: 
+#         # CTRL plot section
 
-        # plot section
-        fig = plt.figure(figsize=(12, 8))
-        fig.suptitle(f'{reg.fileName}, {reg.appTime}')
+#         # plot section
+#         fig = plt.figure(figsize=(12, 8))
+#         fig.suptitle(f'{reg.fileName}, {reg.appTime}')
 
-        ax0 = fig.add_subplot(211)
-        ax0.set_title('Full record')
-        ax0.set_xlabel('t (sec)')
-        ax0.set_ylabel('V (mV)')
-        ax0.plot(reg.sweepX_no_gap, reg.sweepY_no_gap)
+#         ax0 = fig.add_subplot(211)
+#         ax0.set_title('Full record')
+#         ax0.set_xlabel('t (sec)')
+#         ax0.set_ylabel('V (mV)')
+#         ax0.plot(reg.sweepX_no_gap, reg.sweepY_no_gap)
 
-        ax1 = fig.add_subplot(234)
-        ax1.set_title('V ~ t')
-        ax1.set_xlabel('t (sec)')
-        ax1.set_ylabel('V (mV)')
+#         ax1 = fig.add_subplot(234)
+#         ax1.set_title('V ~ t')
+#         ax1.set_xlabel('t (sec)')
+#         ax1.set_ylabel('V (mV)')
 
-        ax2 = fig.add_subplot(235)
-        ax2.set_title('dV/dt ~ V')
-        ax2.set_xlabel('V (mV)')
-        ax2.set_ylabel('dV/dt (V/sec)')
+#         ax2 = fig.add_subplot(235)
+#         ax2.set_title('dV/dt ~ V')
+#         ax2.set_xlabel('V (mV)')
+#         ax2.set_ylabel('dV/dt (V/sec)')
 
-        ax3 = fig.add_subplot(236)
-        ax3.set_title('dV2/dt2 ~ V')
-        ax3.set_xlabel('V (mV)')
-        ax3.set_ylabel('dV2/dt2 (mV/sec2)')
+#         ax3 = fig.add_subplot(236)
+#         ax3.set_title('dV2/dt2 ~ V')
+#         ax3.set_xlabel('V (mV)')
+#         ax3.set_ylabel('dV2/dt2 (mV/sec2)')
 
-        for i in range(0, len(der_array)):
-            ax1.plot(time_line, voltage_array[i], alpha=.5)
-            ax2.plot(voltage_array[i], der_array[i]/1e3, alpha=.5)
-            ax3.plot(voltage_array[i], der2_array[i], alpha=.5)
+#         for i in range(0, len(der_array)):
+#             ax1.plot(time_line, voltage_array[i], alpha=.5)
+#             ax2.plot(voltage_array[i], der_array[i]/1e3, alpha=.5)
+#             ax3.plot(voltage_array[i], der2_array[i], alpha=.5)
 
-        plt.tight_layout()
-        plt.savefig(f'{res_path}/{reg.fileName}_ctrl_img.png')
-        plt.close('all')
+#         plt.tight_layout()
+#         plt.savefig(f'{res_path}/{reg.fileName}_ctrl_img.png')
+#         plt.close('all')
 
-        logging.info('Ctrl img saved\n')
+#         logging.info('Ctrl img saved\n')
 
-if save_csv:
-  df.to_csv(f'{res_path}/results.csv', index=False)
-  logging.info('CSV file saved')
+# if save_csv:
+#   df.to_csv(f'{res_path}/results.csv', index=False)
+#   logging.info('CSV file saved')

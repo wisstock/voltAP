@@ -1,5 +1,6 @@
 data/
 results/
 raw/
+__pycache__/
 
 *.pptx#
